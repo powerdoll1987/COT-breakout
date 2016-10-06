@@ -127,42 +127,84 @@ if __name__ == '__main__':
     netPosM['pivots'] = pd.Series(pivots, index = netPosM.index)
     
     # 分别找出价格上升和下降过程中的所有net pos
-    netPosUptrend = pd.DataFrame(columns = ['NP', 'pivot', 'lastPV'])
-    netPosDowntrend = pd.DataFrame(columns = ['NP', 'pivot', 'lastPV'])
+    netPosUptrend = pd.DataFrame(columns = ['NP', 'pivot', 'lastPV', 'lastPVDt'])
+    netPosDowntrend = pd.DataFrame(columns = ['NP', 'pivot', 'lastPV', 'lastPVDt'])
     i = 1
     lastPivot = pivots[0]
     lastPV = netPos[0]
-    tmp = pd.DataFrame({'NP':netPos[0], 'pivot':pivots[0], 'lastPV':lastPV}, index = [netPos.index[0]])
+    lastPVDt = netPos.index[0]
+    tmp = pd.DataFrame({'NP':netPos[0], 'pivot':pivots[0], 'lastPV':lastPV, 'lastPVDt':lastPVDt}, index = [netPos.index[0]])
     netPosUptrend = pd.concat([netPosUptrend, tmp]) if lastPivot == 1 else netPosUptrend
     netPosDowntrend = pd.concat(netPosDowntrend, tmp) if lastPivot == -1 else netPosDowntrend      
     while i < len(netPos.index):
-        tmp = pd.DataFrame({'NP':netPos[i], 'pivot':pivots[i], 'lastPV':lastPV}, index = [netPos.index[i]])
+        tmp = pd.DataFrame({'NP':netPos[i], 'pivot':pivots[i], 'lastPV':lastPV, 'lastPVDt':lastPVDt}, index = [netPos.index[i]])
         if lastPivot == 1:         
             netPosDowntrend = pd.concat([netPosDowntrend, tmp])
-            lastPivot = -1 if pivots[i] == -1 else lastPivot
-            lastPV = netPos[i] if pivots[i] == -1 else lastPV
+            if pivots[i] == -1:
+                lastPivot = -1
+                lastPV = netPos[i]
+                lastPVDt = netPos.index[i]
         elif lastPivot == -1:
             netPosUptrend = pd.concat([netPosUptrend, tmp])
-            lastPivot = 1 if pivots[i] == 1 else lastPivot   
-            lastPV = netPos[i] if pivots[i] == 1 else lastPV
+            if pivots[i] == 1:
+                lastPivot = 1
+                lastPV = netPos[i]
+                lastPVDt = netPos.index[i]
         i += 1
 
     # 找出之前和之后的顶点和底点，计算其所处的位置
     i = len(netPosUptrend.index) - 1
-    netPosUptrend.reindex(columns = netPosUptrend.columns.tolist() + ['nextPV'])
+    netPosUptrend = netPosUptrend.reindex(columns = netPosUptrend.columns.tolist() + ['nextPV', 'nextPVDt'])
     nextPV = netPosUptrend.ix[-1, 'NP']
+    nextPVDt = netPosUptrend.index[-1]
     while i >= 0:   
-        nextPV = netPosUptrend.ix[i, 'NP'] if netPosUptrend.ix[i, 'pivot'] == 1 else nextPV
-        netPosUptrend.ix[i, 'nextPV'] = nextPV
+        if netPosUptrend.ix[i, 'pivot'] == 1:
+            nextPV = netPosUptrend.ix[i, 'NP']
+            nextPVDt = netPosUptrend.index[i]
+        netPosUptrend.ix[i, ['nextPV','nextPVDt']] = [nextPV, nextPVDt]
         i -= 1
         
     i = len(netPosDowntrend.index) - 1
-    netPosDowntrend.reindex(columns = netPosDowntrend.columns.tolist() + ['nextPV'])
+    netPosDowntrend = netPosDowntrend.reindex(columns = netPosDowntrend.columns.tolist() + ['nextPV', 'nextPVDt'])
     nextPV = netPosDowntrend.ix[-1, 'NP']
+    nextPVDt = netPosDowntrend.index[-1]
     while i >= 0:   
-        nextPV = netPosDowntrend.ix[i, 'NP'] if netPosDowntrend.ix[i, 'pivot'] == -1 else nextPV
-        netPosDowntrend.ix[i, 'nextPV'] = nextPV
+        if netPosDowntrend.ix[i, 'pivot'] == -1:
+            nextPV = netPosDowntrend.ix[i, 'NP']
+            nextPVDt = netPosDowntrend.index[i]
+        netPosDowntrend.ix[i, ['nextPV', 'nextPVDt']] = [nextPV, nextPVDt]
         i -= 1
+        
+    netPosUptrend['npPct'] = (netPosUptrend['NP'] - netPosUptrend['lastPV'])/(netPosUptrend['nextPV'] - netPosUptrend['lastPV'])
+    netPosDowntrend['npPct'] = (netPosDowntrend['NP'] - netPosDowntrend['lastPV'])/(netPosDowntrend['nextPV'] - netPosDowntrend['lastPV'])
+   
+    # 找出对应的价格
+    netPosUptrend = netPosUptrend.reindex(columns = netPosUptrend.columns.tolist() + ['priceChg'])
+    i = 0
+    while i < len(netPosUptrend.index):
+        priceNow = price.ix[netPosUptrend.index[i], 'PX_LAST']
+        priceMin = min(price.ix[netPosUptrend.ix[i, 'lastPVDt'] -Day(7):netPosUptrend.ix[i, 'lastPVDt'] +Day(7), 'PX_LOW'])
+        priceMax = max(price.ix[netPosUptrend.ix[i, 'nextPVDt'] -Day(7):netPosUptrend.ix[i, 'nextPVDt'] +Day(7), 'PX_HIGH'])
+        priceChg = (priceNow-priceMin) / (priceMax- priceMin)
+        netPosUptrend.ix[i, 'priceChg'] = priceChg
+        i += 1
+        
+    netPosDowntrend = netPosDowntrend.reindex(columns = netPosDowntrend.columns.tolist() + ['priceChg'])
+    i = 0
+    while i < len(netPosDowntrend.index):
+        priceNow = price.ix[netPosDowntrend.index[i], 'PX_LAST']
+        priceMax = max(price.ix[netPosDowntrend.ix[i, 'lastPVDt'] -Day(7):netPosDowntrend.ix[i, 'lastPVDt'] +Day(7), 'PX_LOW'])
+        priceMin = min(price.ix[netPosDowntrend.ix[i, 'nextPVDt'] -Day(7):netPosDowntrend.ix[i, 'nextPVDt'] +Day(7), 'PX_HIGH'])
+        priceChg = (priceNow-priceMax) / (priceMin- priceMax)
+        netPosDowntrend.ix[i, 'priceChg'] = priceChg
+        i += 1
+        
+    pl.figure()
+    pl.scatter(netPosUptrend.npPct, netPosUptrend.priceChg)
+    pl.figure()
+    pl.scatter(netPosDowntrend.npPct, netPosDowntrend.priceChg)
+        
+        
         
         
         
