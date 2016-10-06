@@ -22,7 +22,7 @@ from pandas.tseries.offsets import Day
 
 if __name__ == '__main__':
     
-    #*****统计头寸突破幅度的分布（当前极值比上前一个极值，验证假设1）*********************
+#*****统计头寸突破幅度的分布（当前极值比上前一个极值，验证假设1）*********************
     pos = pd.read_excel('INPUT COT GCA.xls', sheetname = 'Sheet1 (2)')
     pos.set_index('Date', inplace = True)
     price = pd.read_excel('INPUT COT GCA.xls', sheetname = 'Sheet2')
@@ -41,16 +41,16 @@ if __name__ == '__main__':
     extremeDiff = pd.concat([peakDiff, valleyDiff]).sort_index()
     pl.figure(3)
     pl.hist(extremeDiff, bins = 40)
-    pl.figure(2)
-    pl.hist(peakDiff, bins = 40, color = 'r', alpha = 0.5)
-    pl.figure(2)
-    pl.hist(valleyDiff, bins = 40, color = 'g', alpha = 0.5)
+#    pl.figure(2)
+#    pl.hist(peakDiff, bins = 40, color = 'r', alpha = 0.5)
+#    pl.figure(2)
+#    pl.hist(valleyDiff, bins = 40, color = 'g', alpha = 0.5)
     
     # 观察极值连线（从顶到底和从底到顶）的统计量
     extreme = netPos[(pivots == 1) | (pivots == -1)]
     ext_line = abs(extreme.diff().dropna()).describe()
     
-    #*****突破之后的价格变化（突破之后的价格变动和突破之前的价格变动比值）***************        
+#*****突破之后的价格变化（突破之后的价格变动和突破之前的价格变动比值）***************        
     # 找出第一次突破前一个极值的时间，以及在这个时间点和下一个极值的时间点之间价格的变动, 比较突破大小和价格变动的关系
     # 先找出突破时间
     peakBreakDf = pd.DataFrame(columns = ['peakDiff', 'breakStart','breakEnd', 'prevPeak', 'breakErr', 'priceChg'])
@@ -80,8 +80,8 @@ if __name__ == '__main__':
         highestPrice = max(price.ix[breakStartDay:breakEndDayAdj, 'PX_HIGH'])
         peakBreakDf.ix[k, 'priceChg'] = (highestPrice - startPrice)/startPrice
         k += 1
-    pl.figure()
-    pl.scatter(peakBreakDf.peakDiff, peakBreakDf.priceChg)
+#    pl.figure()
+#    pl.scatter(peakBreakDf.peakDiff, peakBreakDf.priceChg)
     
     # 对valley重新做一遍
     valleyBreakDf = pd.DataFrame(columns = ['valleyDiff', 'breakStart','breakEnd', 'prevValley', 'breakErr', 'priceChg'])
@@ -111,8 +111,8 @@ if __name__ == '__main__':
         lowestPrice = min(price.ix[breakStartDay:breakEndDayAdj, 'PX_LOW'])
         valleyBreakDf.ix[k, 'priceChg'] = (lowestPrice - startPrice)/startPrice
         k += 1
-    pl.figure()
-    pl.scatter(valleyBreakDf.valleyDiff, valleyBreakDf.priceChg)
+#    pl.figure()
+#    pl.scatter(valleyBreakDf.valleyDiff, valleyBreakDf.priceChg)
     
     # 合并peak和valley作图
     x = peakBreakDf.peakDiff.tolist() + abs(valleyBreakDf.valleyDiff).tolist()
@@ -121,9 +121,52 @@ if __name__ == '__main__':
     pl.scatter(x, y)
     
     
-    #头寸走到极值一半时价格变动占总价格变动的比值（验证假设2）
+#*****头寸变化和价格变化的关系（验证假设2）********************************************
+    netPosM = pd.DataFrame(netPos)
+    netPosM.columns = ['NP']
+    netPosM['pivots'] = pd.Series(pivots, index = netPosM.index)
     
-    
+    # 分别找出价格上升和下降过程中的所有net pos
+    netPosUptrend = pd.DataFrame(columns = ['NP', 'pivot', 'lastPV'])
+    netPosDowntrend = pd.DataFrame(columns = ['NP', 'pivot', 'lastPV'])
+    i = 1
+    lastPivot = pivots[0]
+    lastPV = netPos[0]
+    tmp = pd.DataFrame({'NP':netPos[0], 'pivot':pivots[0], 'lastPV':lastPV}, index = [netPos.index[0]])
+    netPosUptrend = pd.concat([netPosUptrend, tmp]) if lastPivot == 1 else netPosUptrend
+    netPosDowntrend = pd.concat(netPosDowntrend, tmp) if lastPivot == -1 else netPosDowntrend      
+    while i < len(netPos.index):
+        tmp = pd.DataFrame({'NP':netPos[i], 'pivot':pivots[i], 'lastPV':lastPV}, index = [netPos.index[i]])
+        if lastPivot == 1:         
+            netPosDowntrend = pd.concat([netPosDowntrend, tmp])
+            lastPivot = -1 if pivots[i] == -1 else lastPivot
+            lastPV = netPos[i] if pivots[i] == -1 else lastPV
+        elif lastPivot == -1:
+            netPosUptrend = pd.concat([netPosUptrend, tmp])
+            lastPivot = 1 if pivots[i] == 1 else lastPivot   
+            lastPV = netPos[i] if pivots[i] == 1 else lastPV
+        i += 1
+
+    # 找出之前和之后的顶点和底点，计算其所处的位置
+    i = len(netPosUptrend.index) - 1
+    netPosUptrend.reindex(columns = netPosUptrend.columns.tolist() + ['nextPV'])
+    nextPV = netPosUptrend.ix[-1, 'NP']
+    while i >= 0:   
+        nextPV = netPosUptrend.ix[i, 'NP'] if netPosUptrend.ix[i, 'pivot'] == 1 else nextPV
+        netPosUptrend.ix[i, 'nextPV'] = nextPV
+        i -= 1
+        
+    i = len(netPosDowntrend.index) - 1
+    netPosDowntrend.reindex(columns = netPosDowntrend.columns.tolist() + ['nextPV'])
+    nextPV = netPosDowntrend.ix[-1, 'NP']
+    while i >= 0:   
+        nextPV = netPosDowntrend.ix[i, 'NP'] if netPosDowntrend.ix[i, 'pivot'] == -1 else nextPV
+        netPosDowntrend.ix[i, 'nextPV'] = nextPV
+        i -= 1
+        
+        
+        
+        
     #找出大幅突破的情况，观察之后的价格变动（即分布的右边）
     
     
