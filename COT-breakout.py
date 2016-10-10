@@ -18,6 +18,7 @@ import taifook.zigzag_c as zz
 import pylab as pl
 import matplotlib.pyplot as plt
 from pandas.tseries.offsets import Day
+from scipy import stats
 
 
 if __name__ == '__main__':
@@ -119,6 +120,10 @@ if __name__ == '__main__':
     y = peakBreakDf.priceChg.tolist() + abs(valleyBreakDf.priceChg).tolist()
     pl.figure()
     pl.scatter(x, y)
+    slope, intercept, r_value, p_value, slope_std_error = stats.linregress(x, y)
+    xa = np.array(x)
+    predict_y = intercept + slope * xa
+    pl.plot(xa, predict_y, 'k-')
     
     
 #*****头寸变化和价格变化的关系（验证假设2）********************************************
@@ -199,11 +204,30 @@ if __name__ == '__main__':
         netPosDowntrend.ix[i, 'priceChg'] = priceChg
         i += 1
         
+    netPosUptrend = netPosUptrend.dropna()
+    netPosDowntrend = netPosDowntrend.dropna()
+    
+    # 把价格变化和头寸变化作图
     pl.figure()
-    pl.scatter(netPosUptrend.npPct, netPosUptrend.priceChg)
+    pl.scatter(netPosUptrend.npPct, netPosUptrend.priceChg)  
+    
     pl.figure()
-    pl.scatter(netPosDowntrend.npPct, netPosDowntrend.priceChg)
-        
+    pl.scatter(netPosDowntrend.npPct, netPosDowntrend.priceChg)  
+    
+    netPosUptrendAdj = netPosUptrend[(netPosUptrend.priceChg >= 0) & (netPosUptrend.priceChg <= 1)]
+    pl.figure()
+    pl.scatter(netPosUptrendAdj.npPct, netPosUptrendAdj.priceChg)  
+    slope2, intercept2, r_value2, p_value2, slope_std_error2 = stats.linregress(netPosUptrendAdj.npPct.tolist(), netPosUptrendAdj.priceChg.tolist())
+    predict_y2 = intercept2 + slope2 * netPosUptrendAdj.npPct
+    pl.plot(netPosUptrendAdj.npPct, predict_y2, 'k-')
+    
+    netPosDowntrendAdj = netPosDowntrend[(netPosDowntrend.priceChg >= 0) & (netPosDowntrend.priceChg <= 1)]
+    pl.figure()
+    pl.scatter(netPosDowntrendAdj.npPct, netPosDowntrendAdj.priceChg)
+    slope3, intercept3, r_value3, p_value3, slope_std_error3 = stats.linregress(netPosDowntrendAdj.npPct.tolist(), netPosDowntrendAdj.priceChg.tolist())
+    predict_y3 = intercept3 + slope3 * netPosDowntrendAdj.npPct
+    pl.plot(netPosDowntrendAdj.npPct, predict_y3, 'k-')
+    
         
         
         
