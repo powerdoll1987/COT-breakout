@@ -24,14 +24,14 @@ from scipy import stats
 if __name__ == '__main__':
     
 #*****统计头寸突破幅度的分布（当前极值比上前一个极值，验证假设1）*********************
-    pos = pd.read_excel('INPUT COT GCA.xls', sheetname = 'Sheet1 (2)')
+    pos = pd.read_excel('INPUT COT TYA.xls', sheetname = 'Sheet1 (2)')
     pos.set_index('Date', inplace = True)
-    price = pd.read_excel('INPUT COT GCA.xls', sheetname = 'Sheet2')
-    price.set_index('GC1 Comdty', inplace = True)
+    price = pd.read_excel('INPUT COT TYA.xls', sheetname = 'Sheet2')
+    price.set_index('TY1 Comdty', inplace = True)
     
     # 第4列是NCN，最后一列是OI
     netPos = pos.ix[:, 3] / pos.ix[:, -1]
-    pivots = zz.peak_valley_pivots2(netPos, 0.1, -0.1)
+    pivots = zz.peak_valley_pivots2(netPos, 0.07, -0.07)
     zz.plot_pivots(netPos, pivots)
     
     # 画出每次极值和之前一次极值的距离，观察突破或者不及的分布
@@ -41,6 +41,7 @@ if __name__ == '__main__':
     valleyDiff =valley.diff().dropna()   
     extremeDiff = pd.concat([peakDiff, valleyDiff]).sort_index()
     pl.figure(3)
+    pl.title('Breakout distribution')
     pl.hist(extremeDiff, bins = 40)
 #    pl.figure(2)
 #    pl.hist(peakDiff, bins = 40, color = 'r', alpha = 0.5)
@@ -50,6 +51,7 @@ if __name__ == '__main__':
     # 观察极值连线（从顶到底和从底到顶）的统计量
     extreme = netPos[(pivots == 1) | (pivots == -1)]
     ext_line = abs(extreme.diff().dropna()).describe()
+    print(ext_line)
     
 #*****突破之后的价格变化（突破之后的价格变动和突破之前的价格变动比值）***************        
     # 找出第一次突破前一个极值的时间，以及在这个时间点和下一个极值的时间点之间价格的变动, 比较突破大小和价格变动的关系
@@ -119,11 +121,13 @@ if __name__ == '__main__':
     x = peakBreakDf.peakDiff.tolist() + abs(valleyBreakDf.valleyDiff).tolist()
     y = peakBreakDf.priceChg.tolist() + abs(valleyBreakDf.priceChg).tolist()
     pl.figure()
+    pl.title('Breakout and subsequent price move')
     pl.scatter(x, y)
     slope, intercept, r_value, p_value, slope_std_error = stats.linregress(x, y)
     xa = np.array(x)
     predict_y = intercept + slope * xa
     pl.plot(xa, predict_y, 'k-')
+    print('1. slope: %.3f, intercept: %.3f, r-squared: %.3f'%(slope, intercept, r_value**2))
     
     
 #*****头寸变化和价格变化的关系（验证假设2）********************************************
@@ -140,7 +144,7 @@ if __name__ == '__main__':
     lastPVDt = netPos.index[0]
     tmp = pd.DataFrame({'NP':netPos[0], 'pivot':pivots[0], 'lastPV':lastPV, 'lastPVDt':lastPVDt}, index = [netPos.index[0]])
     netPosUptrend = pd.concat([netPosUptrend, tmp]) if lastPivot == 1 else netPosUptrend
-    netPosDowntrend = pd.concat(netPosDowntrend, tmp) if lastPivot == -1 else netPosDowntrend      
+    netPosDowntrend = pd.concat([netPosDowntrend, tmp]) if lastPivot == -1 else netPosDowntrend      
     while i < len(netPos.index):
         tmp = pd.DataFrame({'NP':netPos[i], 'pivot':pivots[i], 'lastPV':lastPV, 'lastPVDt':lastPVDt}, index = [netPos.index[i]])
         if lastPivot == 1:         
@@ -183,7 +187,7 @@ if __name__ == '__main__':
     netPosUptrend['npPct'] = (netPosUptrend['NP'] - netPosUptrend['lastPV'])/(netPosUptrend['nextPV'] - netPosUptrend['lastPV'])
     netPosDowntrend['npPct'] = (netPosDowntrend['NP'] - netPosDowntrend['lastPV'])/(netPosDowntrend['nextPV'] - netPosDowntrend['lastPV'])
    
-    # 找出对应的价格
+    # 找出对应的价格,MAX/MIN用的是头寸极值点附近的价格
     netPosUptrend = netPosUptrend.reindex(columns = netPosUptrend.columns.tolist() + ['priceChg'])
     i = 0
     while i < len(netPosUptrend.index):
@@ -209,25 +213,32 @@ if __name__ == '__main__':
     
     # 把价格变化和头寸变化作图
     pl.figure()
+    pl.title('position and price (uptrend)')
     pl.scatter(netPosUptrend.npPct, netPosUptrend.priceChg)  
     
     pl.figure()
+    pl.title('position and price (downtrend)')
     pl.scatter(netPosDowntrend.npPct, netPosDowntrend.priceChg)  
     
     netPosUptrendAdj = netPosUptrend[(netPosUptrend.priceChg >= 0) & (netPosUptrend.priceChg <= 1)]
+    netPosUptrendAdj = netPosUptrendAdj[(netPosUptrendAdj.npPct >= 0) & (netPosUptrendAdj.npPct <= 1)]
     pl.figure()
+    pl.title('position and price adjusted (uptrend)')
     pl.scatter(netPosUptrendAdj.npPct, netPosUptrendAdj.priceChg)  
     slope2, intercept2, r_value2, p_value2, slope_std_error2 = stats.linregress(netPosUptrendAdj.npPct.tolist(), netPosUptrendAdj.priceChg.tolist())
     predict_y2 = intercept2 + slope2 * netPosUptrendAdj.npPct
     pl.plot(netPosUptrendAdj.npPct, predict_y2, 'k-')
+    print('2. slope: %.3f, intercept: %.3f, r-squared: %.3f'%(slope2, intercept2, r_value2**2))
     
     netPosDowntrendAdj = netPosDowntrend[(netPosDowntrend.priceChg >= 0) & (netPosDowntrend.priceChg <= 1)]
+    netPosDowntrendAdj = netPosDowntrendAdj[(netPosDowntrendAdj.npPct >= 0) & (netPosDowntrendAdj.npPct <= 1)]    
     pl.figure()
+    pl.title('position and price adjusted (downtrend)')
     pl.scatter(netPosDowntrendAdj.npPct, netPosDowntrendAdj.priceChg)
     slope3, intercept3, r_value3, p_value3, slope_std_error3 = stats.linregress(netPosDowntrendAdj.npPct.tolist(), netPosDowntrendAdj.priceChg.tolist())
     predict_y3 = intercept3 + slope3 * netPosDowntrendAdj.npPct
     pl.plot(netPosDowntrendAdj.npPct, predict_y3, 'k-')
-    
+    print('3. slope: %.3f, intercept: %.3f, r-squared: %.3f'%(slope3, intercept3, r_value3**2))
         
         
         
